@@ -15,6 +15,10 @@ import time
 from datetime import datetime
 import shutil
 
+# Enable global string cache for categorical columns
+# This is required when concatenating DataFrames with categorical columns
+pl.enable_string_cache()
+
 
 class DataPreparer:
     def __init__(self, data_dir: Path, optimized_dir: Path):

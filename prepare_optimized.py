@@ -9,7 +9,7 @@ Features:
 - Streaming: Never loads entire dataset into memory
 - Incremental partitioning with append mode
 - Efficient aggregation from partition files
-- Target: < 20 minutes on M2 MacBook
+- ZSTD compression level 3 for balanced compression
 
 Usage:
   python prepare_optimized.py --data-dir ./data/data-full --optimized-dir ./optimized_data_full
@@ -22,6 +22,10 @@ import shutil
 from multiprocessing import Pool, cpu_count
 from functools import partial
 import os
+
+# Enable global string cache for categorical columns
+# This is required when concatenating DataFrames with categorical columns
+pl.enable_string_cache()
 
 
 def process_csv_with_worker_id(args):
@@ -36,11 +40,6 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
     This function runs in a separate process.
     Writes to temporary worker-specific files to avoid race conditions.
 
-    Optimizations:
-    - Dictionary encoding for categorical columns
-    - Optimized compression settings
-    - Pre-sorting within partitions for faster scans
-
     Returns: (file_name, row_count, processing_time)
     """
     start = time.time()
@@ -48,16 +47,12 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
     temp_dir = optimized_dir / "temp" / f"worker_{worker_id}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read CSV with schema - use categorical types for better compression
+    # Read CSV with schema
     df = pl.scan_csv(
         csv_file,
         schema=schema,
         null_values=["", "null"],
-    ).with_columns([
-        # Convert categorical columns to categorical type (dictionary encoding)
-        pl.col("type").cast(pl.Categorical),
-        pl.col("country").cast(pl.Categorical),
-    ]).collect()
+    ).collect()
 
     # Add derived columns
     df = df.with_columns([
@@ -86,10 +81,6 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
 
         for day in days:
             day_df = type_df.filter(pl.col("day") == day)
-
-            # Pre-sort by timestamp for better compression and scan performance
-            day_df = day_df.sort("ts")
-
             day_str = str(day)
 
             # Write to temp file with CSV file name to make it unique
@@ -97,9 +88,8 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
             day_df.write_parquet(
                 output_file,
                 compression="zstd",
-                compression_level=1,  # Reduced from 3 for faster writes (still good compression)
+                compression_level=3,  # Balanced compression
                 statistics=True,
-                use_pyarrow=False,  # Use Polars native writer (faster)
             )
 
     elapsed = time.time() - start
@@ -350,9 +340,8 @@ class OptimizedDataPreparer:
 
         # Determine optimal worker count
         if num_workers is None:
-            # Use 75% of CPU cores, capped at 8 for memory safety on 16GB RAM
-            # Increased from 6 since we use streaming/lazy loading now
-            num_workers = min(8, max(1, int(cpu_count() * 0.75)))
+            # Use 75% of CPU cores, capped at 6 for memory safety on 16GB RAM
+            num_workers = min(6, max(1, int(cpu_count() * 0.75)))
         self.num_workers = num_workers
 
     def _merge_temp_partitions(self):
@@ -399,9 +388,8 @@ class OptimizedDataPreparer:
                 combined.write_parquet(
                     output_file,
                     compression="zstd",
-                    compression_level=1,  # Reduced from 3 for faster writes
+                    compression_level=3,  # Balanced compression
                     statistics=True,
-                    use_pyarrow=False,  # Use Polars native writer (faster)
                 )
 
         # Clean up temp directory
@@ -515,7 +503,7 @@ def main():
         "--workers",
         type=int,
         default=None,
-        help="Number of parallel workers (default: auto-detect, max 6 for 16GB RAM)"
+        help="Number of parallel workers (default: auto-detect, max 6)"
     )
 
     args = parser.parse_args()
