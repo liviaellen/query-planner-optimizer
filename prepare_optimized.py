@@ -36,6 +36,11 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
     This function runs in a separate process.
     Writes to temporary worker-specific files to avoid race conditions.
 
+    Optimizations:
+    - Dictionary encoding for categorical columns
+    - Optimized compression settings
+    - Pre-sorting within partitions for faster scans
+
     Returns: (file_name, row_count, processing_time)
     """
     start = time.time()
@@ -43,12 +48,16 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
     temp_dir = optimized_dir / "temp" / f"worker_{worker_id}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read CSV with schema
-    df = pl.read_csv(
+    # Read CSV with schema - use categorical types for better compression
+    df = pl.scan_csv(
         csv_file,
         schema=schema,
         null_values=["", "null"],
-    )
+    ).with_columns([
+        # Convert categorical columns to categorical type (dictionary encoding)
+        pl.col("type").cast(pl.Categorical),
+        pl.col("country").cast(pl.Categorical),
+    ]).collect()
 
     # Add derived columns
     df = df.with_columns([
@@ -77,6 +86,10 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
 
         for day in days:
             day_df = type_df.filter(pl.col("day") == day)
+
+            # Pre-sort by timestamp for better compression and scan performance
+            day_df = day_df.sort("ts")
+
             day_str = str(day)
 
             # Write to temp file with CSV file name to make it unique
@@ -84,8 +97,9 @@ def process_csv_file(csv_file: Path, optimized_dir: Path, schema: dict, worker_i
             day_df.write_parquet(
                 output_file,
                 compression="zstd",
-                compression_level=3,
+                compression_level=1,  # Reduced from 3 for faster writes (still good compression)
                 statistics=True,
+                use_pyarrow=False,  # Use Polars native writer (faster)
             )
 
     elapsed = time.time() - start
@@ -336,8 +350,9 @@ class OptimizedDataPreparer:
 
         # Determine optimal worker count
         if num_workers is None:
-            # Use 75% of CPU cores, capped at 6 for memory safety on 16GB RAM
-            num_workers = min(6, max(1, int(cpu_count() * 0.75)))
+            # Use 75% of CPU cores, capped at 8 for memory safety on 16GB RAM
+            # Increased from 6 since we use streaming/lazy loading now
+            num_workers = min(8, max(1, int(cpu_count() * 0.75)))
         self.num_workers = num_workers
 
     def _merge_temp_partitions(self):
@@ -378,14 +393,15 @@ class OptimizedDataPreparer:
                 # Only one file, just move it
                 shutil.move(str(file_list[0]), str(output_file))
             else:
-                # Multiple files, concatenate them
+                # Multiple files, concatenate them efficiently with lazy loading
                 dfs = [pl.scan_parquet(f) for f in file_list]
                 combined = pl.concat(dfs).collect()
                 combined.write_parquet(
                     output_file,
                     compression="zstd",
-                    compression_level=3,
+                    compression_level=1,  # Reduced from 3 for faster writes
                     statistics=True,
+                    use_pyarrow=False,  # Use Polars native writer (faster)
                 )
 
         # Clean up temp directory

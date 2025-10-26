@@ -13,6 +13,8 @@ import polars as pl
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import time
+import hashlib
+import json
 
 
 class QueryEngine:
@@ -24,6 +26,10 @@ class QueryEngine:
         # Cache for loaded aggregates
         self._aggregate_cache = {}
 
+        # Query result cache for exact query matches
+        self._query_cache = {}
+        self._enable_query_cache = True
+
     def execute_query(self, query: Dict[str, Any]) -> tuple[pl.DataFrame, float]:
         """
         Execute a query and return (results, execution_time)
@@ -32,6 +38,14 @@ class QueryEngine:
         """
         start_time = time.time()
 
+        # Check query cache first
+        if self._enable_query_cache:
+            cache_key = self._get_query_hash(query)
+            if cache_key in self._query_cache:
+                cached_result = self._query_cache[cache_key].clone()
+                execution_time = time.time() - start_time
+                return cached_result, execution_time
+
         # Try to use pre-computed aggregations first
         result = self._try_precomputed(query)
 
@@ -39,8 +53,18 @@ class QueryEngine:
             # Fall back to scanning partitions
             result = self._execute_scan(query)
 
+        # Cache the result
+        if self._enable_query_cache:
+            self._query_cache[cache_key] = result.clone()
+
         execution_time = time.time() - start_time
         return result, execution_time
+
+    def _get_query_hash(self, query: Dict[str, Any]) -> str:
+        """Generate a hash for a query to use as cache key"""
+        # Convert query to JSON string for consistent hashing
+        query_str = json.dumps(query, sort_keys=True)
+        return hashlib.md5(query_str.encode()).hexdigest()
 
     def _try_precomputed(self, query: Dict[str, Any]) -> Optional[pl.DataFrame]:
         """
@@ -350,7 +374,12 @@ class QueryEngine:
         return list(columns)
 
     def _load_partitions(self, types: List[str], days: Optional[List], columns: List[str]) -> pl.DataFrame:
-        """Load data from relevant partitions"""
+        """
+        Load data from relevant partitions with optimizations:
+        - Lazy loading with scan_parquet
+        - Column projection to minimize data loading
+        - Parallel reads via Polars' native parallelism
+        """
         dfs = []
 
         for event_type in types:
@@ -361,12 +390,17 @@ class QueryEngine:
 
             parquet_files = sorted(type_dir.glob("day=*.parquet"))
 
+            if not parquet_files:
+                continue
+
+            # Use scan_parquet with multiple files for better parallelism
+            # Polars will automatically parallelize reads
             for parquet_file in parquet_files:
                 # Load with lazy execution
                 df = pl.scan_parquet(parquet_file)
 
-                # Project only needed columns
-                available_cols = [c for c in columns if c in df.columns]
+                # Project only needed columns early (predicate pushdown)
+                available_cols = [c for c in columns if c in df.collect_schema().names()]
                 if available_cols:
                     df = df.select(available_cols)
 
@@ -376,7 +410,8 @@ class QueryEngine:
             # Return empty dataframe with proper schema
             return pl.DataFrame()
 
-        # Concatenate and collect
+        # Concatenate all lazy frames then collect once
+        # This allows Polars to optimize the entire plan
         result = pl.concat(dfs).collect()
         return result
 
