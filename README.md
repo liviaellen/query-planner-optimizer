@@ -7,6 +7,7 @@
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [For Judges](#for-judges)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Command Reference](#command-reference)
@@ -37,6 +38,47 @@ make test-optimizations
 # View system info
 make info
 ```
+
+---
+
+## For Judges
+
+**📋 See [JUDGES_INSTRUCTIONS.md](JUDGES_INSTRUCTIONS.md) for complete evaluation instructions.**
+
+### Quick Evaluation Steps
+
+1. **Prepare data** (one-time, choose one):
+   ```bash
+   # Option 1: Optimized (recommended)
+   python prepare_optimized.py --data-dir data/data-full --optimized-dir optimized_data
+
+   # Option 2: Ultra-fast (<20 min target)
+   python prepare_ultra_fast.py --data-dir data/data-full --optimized-dir optimized_data_ultra
+   ```
+
+2. **Add your evaluation queries** to `judges.py` (in main directory):
+   ```python
+   queries = [
+       {"select": [...], "from": "events", "where": [...], ...},
+       # Your evaluation queries here
+   ]
+   ```
+
+3. **Switch the import** in `main.py` (line 18-19):
+   ```python
+   # Comment out:
+   # from inputs import queries as default_queries
+
+   # Uncomment:
+   from judges import queries as default_queries
+   ```
+
+4. **Run evaluation**:
+   ```bash
+   python main.py --optimized-dir optimized_data --out-dir results_evaluation
+   ```
+
+Results saved as `results_evaluation/q1.csv`, `q2.csv`, etc.
 
 ---
 
@@ -98,29 +140,12 @@ make query-cached
 
 ### Custom Queries
 
-Test with your own queries from a JSON file:
+To use custom queries, edit either `inputs.py` or `judges.py` and change the import in `main.py`:
 
-```bash
-# Default queries
-python main.py --optimized-dir optimized_data --out-dir results
-
-# Custom queries from JSON file
-python main.py --optimized-dir optimized_data --out-dir results --queries-file my_queries.json
-```
-
-**Example query file format:**
-
-```json
-{
-  "queries": [
-    {
-      "select": ["day", {"SUM": "bid_price"}],
-      "from": "events",
-      "where": [{"col": "type", "op": "eq", "val": "impression"}],
-      "group_by": ["day"]
-    }
-  ]
-}
+```python
+# main.py line 18-19
+from inputs import queries as default_queries      # Default benchmark queries (5 queries)
+# from judges import queries as default_queries   # Custom queries (uncomment to use)
 ```
 
 ---
@@ -299,10 +324,12 @@ python prepare_optimized.py --data-dir data/data-full --optimized-dir optimized_
 
 ### Main Files
 
-- **`prepare_optimized.py`** - Optimized data preparation (6 workers, ZSTD level 3)
-- **`prepare_ultra_fast.py`** - Ultra-fast preparation (<20 min target, ZSTD level 0)
-- **`prepare.py`** - Legacy single-threaded preparation
 - **`main.py`** - Query execution entry point
+- **`inputs.py`** - Default benchmark queries (5 queries)
+- **`judges.py`** - Placeholder for judges' evaluation queries
+- **`prepare_optimized.py`** - Optimized data preparation (6 workers, ZSTD level 3)
+- **`prepare_ultra_fast.py`** - Ultra-fast preparation (<20 min target, ZSTD level 1)
+- **`prepare.py`** - Legacy single-threaded preparation
 - **`query_engine.py`** - Query execution engine with caching
 - **`Makefile`** - Common commands
 - **`requirements.txt`** - Python dependencies
@@ -310,13 +337,14 @@ python prepare_optimized.py --data-dir data/data-full --optimized-dir optimized_
 ### Documentation
 
 - **`README.md`** - This file (complete documentation)
+- **`JUDGES_INSTRUCTIONS.md`** - Instructions for judges to run evaluation queries
 - **`UPDATES_SUMMARY.md`** - Recent changes and updates
 - **`CLAUDE.md`** - Challenge instructions
 
 ### Baseline
 
 - **`baseline/main.py`** - DuckDB baseline for comparison
-- **`baseline/inputs.py`** - Query definitions
+- **`baseline/inputs.py`** - Original benchmark queries (kept for reference)
 
 ---
 

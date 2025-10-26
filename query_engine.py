@@ -66,6 +66,10 @@ class QueryEngine:
         query_str = json.dumps(query, sort_keys=True)
         return hashlib.md5(query_str.encode()).hexdigest()
 
+    def _aggregate_exists(self, filename: str) -> bool:
+        """Check if a pre-computed aggregate file exists"""
+        return (self.aggregates_dir / filename).exists()
+
     def _try_precomputed(self, query: Dict[str, Any]) -> Optional[pl.DataFrame]:
         """
         Attempt to answer query using pre-computed aggregations
@@ -77,23 +81,28 @@ class QueryEngine:
         order_by = query.get("order_by", [])
 
         # Pattern 1: Daily revenue (SUM bid_price by day, type=impression)
-        if (self._matches_daily_revenue(select, where, group_by)):
+        if (self._matches_daily_revenue(select, where, group_by) and
+            self._aggregate_exists("daily_revenue.parquet")):
             return self._query_daily_revenue(where, order_by)
 
         # Pattern 2: Publisher revenue by country and day range
-        if (self._matches_publisher_day_revenue(select, where, group_by)):
+        if (self._matches_publisher_day_revenue(select, where, group_by) and
+            self._aggregate_exists("publisher_day_country_revenue.parquet")):
             return self._query_publisher_day_revenue(where, group_by, order_by)
 
         # Pattern 3: Country purchase statistics
-        if (self._matches_country_purchases(select, where, group_by)):
+        if (self._matches_country_purchases(select, where, group_by) and
+            self._aggregate_exists("country_purchases.parquet")):
             return self._query_country_purchases(order_by)
 
         # Pattern 4: Advertiser-type counts
-        if (self._matches_advertiser_type(select, where, group_by)):
+        if (self._matches_advertiser_type(select, where, group_by) and
+            self._aggregate_exists("advertiser_type_counts.parquet")):
             return self._query_advertiser_type(order_by)
 
         # Pattern 5: Minute-level revenue
-        if (self._matches_minute_revenue(select, where, group_by)):
+        if (self._matches_minute_revenue(select, where, group_by) and
+            self._aggregate_exists("minute_revenue.parquet")):
             return self._query_minute_revenue(where, order_by)
 
         return None

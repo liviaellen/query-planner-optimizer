@@ -2,106 +2,96 @@
 # Cal Hacks Query Planner Challenge
 
 # Variables
-VENV := venv
-PYTHON := $(VENV)/bin/python3
-PIP := $(VENV)/bin/pip
-DATA_DIR_FULL := data/data-full
-DATA_DIR_LITE := data/data-lite
-OPTIMIZED_DIR_FULL := optimized_data_full
-OPTIMIZED_DIR_LITE := optimized_data_lite
-OPTIMIZED_DIR_FULL_V2 := optimized_data_full_v2
-OPTIMIZED_DIR_LITE_V2 := optimized_data_lite_v2
-OPTIMIZED_DIR_ULTRA := optimized_data_ultra
-RESULTS_DIR_FULL := results_full
-RESULTS_DIR_LITE := results_lite
-RESULTS_DIR_FULL_V2 := results_full_v2
-RESULTS_DIR_LITE_V2 := results_lite_v2
-RESULTS_DIR_ULTRA := results_ultra
-BASELINE_RESULTS_FULL := baseline_results_full
-BASELINE_RESULTS_LITE := baseline_results_lite
+PYTHON := python3
+DATA_FULL := data/data-full
+DATA_LITE := data/data-lite
+OPTIMIZED := optimized_data
+OPTIMIZED_LITE := optimized_data_lite
+OPTIMIZED_ULTRA := optimized_data_ultra
+RESULTS := results
+RESULTS_LITE := results_lite
+RESULTS_ULTRA := results_ultra
+BASELINE_RESULTS := baseline_results
 
-# Colors for output
+# Colors
 GREEN := \033[0;32m
 YELLOW := \033[1;33m
 BLUE := \033[0;34m
-NC := \033[0m # No Color
+NC := \033[0m
 
-.PHONY: help install prepare-optimized prepare-optimized-lite prepare-ultra-fast \
-        query-optimized query-cached query-ultra-fast query-ultra-cached \
-        baseline-full baseline-lite compare clean all test \
-        benchmark-optimizations test-optimizations info-optimizations all-ultra-fast
+.PHONY: help install prepare prepare-lite prepare-ultra test clean
 
 # Default target
 .DEFAULT_GOAL := help
 
 help:
-	@echo "$(BLUE)High-Performance Query Engine - Makefile Commands$(NC)"
+	@echo "$(BLUE)High-Performance Query Engine$(NC)"
 	@echo ""
 	@echo "$(GREEN)Setup:$(NC)"
-	@echo "  make install          - Install Python dependencies"
+	@echo "  make install       - Install dependencies"
 	@echo ""
-	@echo "$(GREEN)Data Preparation (Choose One):$(NC)"
-	@echo "  make prepare-optimized      - Full dataset (6 workers, ZSTD level 3, all aggregates)"
-	@echo "  make prepare-optimized-lite - Lite dataset (for quick testing)"
-	@echo "  make prepare-ultra-fast     - ULTRA-FAST preparation (<20 min target, ZSTD level 1)"
+	@echo "$(GREEN)Prepare Data (choose one):$(NC)"
+	@echo "  make prepare       - Full dataset (6 workers, ZSTD level 3)"
+	@echo "  make prepare-lite  - Lite dataset (quick testing)"
+	@echo "  make prepare-ultra - Ultra-fast (<20 min, ZSTD level 1)"
 	@echo ""
-	@echo "$(GREEN)Query Execution:$(NC)"
-	@echo "  make query-optimized        - Run queries on optimized data (first run)"
-	@echo "  make query-cached           - Run queries again (test cache performance)"
-	@echo "  make query-ultra-fast       - Run queries on ultra-fast data (first run)"
-	@echo "  make query-ultra-cached     - Run queries again on ultra-fast (test cache)"
+	@echo "$(GREEN)Run Queries:$(NC)"
+	@echo "  make query         - Run queries on optimized data"
+	@echo "  make query-lite    - Run queries on lite data"
+	@echo "  make query-ultra   - Run queries on ultra-fast data"
 	@echo ""
-	@echo "$(GREEN)Workflows:$(NC)"
-	@echo "  make test-optimizations     - Quick test on lite dataset (~30 sec)"
-	@echo "  make all-ultra-fast         - Full ultra-fast workflow (prepare + query + cache)"
-	@echo "  make benchmark-optimizations - Compare performance"
+	@echo "$(GREEN)Testing:$(NC)"
+	@echo "  make test          - Quick test on lite dataset (~30 sec)"
+	@echo "  make baseline      - Run DuckDB baseline for comparison"
 	@echo ""
-	@echo "$(GREEN)Baseline & Benchmarking:$(NC)"
-	@echo "  make install-baseline       - Install DuckDB for baseline comparison"
-	@echo "  make baseline-full          - Run DuckDB baseline on full dataset"
-	@echo "  make baseline-lite          - Run DuckDB baseline on lite dataset"
-	@echo ""
-	@echo "$(GREEN)Maintenance:$(NC)"
-	@echo "  make clean            - Remove all generated files"
-	@echo "  make clean-results    - Remove only query results"
-	@echo "  make clean-optimized  - Remove optimized data (keep results)"
-	@echo "  make info             - Display system information"
-	@echo "  make info-optimizations - Display optimization details"
+	@echo "$(GREEN)Cleanup:$(NC)"
+	@echo "  make clean         - Remove all generated files"
 	@echo ""
 
 # Installation
 install:
 	@echo "$(GREEN)Installing dependencies...$(NC)"
-	$(PIP) install -r requirements.txt
-	@echo "$(GREEN)Dependencies installed successfully!$(NC)"
+	pip install -r requirements.txt
+	@echo "$(GREEN)Done!$(NC)"
 
-install-baseline:
-	@echo "$(GREEN)Installing DuckDB baseline dependencies...$(NC)"
-	$(PIP) install duckdb>=1.1.1 pandas>=2.2.0
-	@echo "$(GREEN)Baseline dependencies installed successfully!$(NC)"
+# Prepare data
+prepare:
+	@echo "$(YELLOW)Preparing full dataset (6 workers, ZSTD level 3)...$(NC)"
+	@time $(PYTHON) prepare_optimized.py --data-dir $(DATA_FULL) --optimized-dir $(OPTIMIZED)
+	@echo "$(GREEN)Done! Size: $(shell du -sh $(OPTIMIZED) | cut -f1)$(NC)"
 
-# Data Preparation - Two Options Available
-# 1. prepare-optimized: 6 workers, ZSTD level 3, all aggregates
-# 2. prepare-ultra-fast: All cores, ZSTD level 0, <20 min target
+prepare-lite:
+	@echo "$(YELLOW)Preparing lite dataset...$(NC)"
+	@time $(PYTHON) prepare_optimized.py --data-dir $(DATA_LITE) --optimized-dir $(OPTIMIZED_LITE)
+	@echo "$(GREEN)Done!$(NC)"
+
+prepare-ultra:
+	@echo "$(YELLOW)Preparing full dataset ULTRA-FAST (<20 min target)...$(NC)"
+	@time $(PYTHON) prepare_ultra_fast.py --data-dir $(DATA_FULL) --optimized-dir $(OPTIMIZED_ULTRA)
+	@echo "$(GREEN)Done! Size: $(shell du -sh $(OPTIMIZED_ULTRA) | cut -f1)$(NC)"
+
+# Run queries
+query:
+	@echo "$(BLUE)Running queries...$(NC)"
+	@time $(PYTHON) main.py --optimized-dir $(OPTIMIZED) --out-dir $(RESULTS)
+	@echo "$(GREEN)Done! Results in $(RESULTS)/$(NC)"
+
+query-lite:
+	@echo "$(BLUE)Running queries on lite data...$(NC)"
+	@time $(PYTHON) main.py --optimized-dir $(OPTIMIZED_LITE) --out-dir $(RESULTS_LITE)
+	@echo "$(GREEN)Done!$(NC)"
+
+query-ultra:
+	@echo "$(BLUE)Running queries on ultra-fast data...$(NC)"
+	@time $(PYTHON) main.py --optimized-dir $(OPTIMIZED_ULTRA) --out-dir $(RESULTS_ULTRA)
+	@echo "$(GREEN)Done!$(NC)"
 
 # Baseline
-baseline-full:
-	@echo "$(BLUE)Running DuckDB baseline on full dataset...$(NC)"
-	@if ! $(PIP) show duckdb > /dev/null 2>&1; then \
-		echo "$(YELLOW)DuckDB not installed. Installing...$(NC)"; \
-		$(MAKE) install-baseline; \
-	fi
-	cd baseline && $(PYTHON) main.py --data-dir ../$(DATA_DIR_FULL) --out-dir ../$(BASELINE_RESULTS_FULL)
-	@echo "$(GREEN)Baseline completed! Results saved to $(BASELINE_RESULTS_FULL)/$(NC)"
-
-baseline-lite:
-	@echo "$(BLUE)Running DuckDB baseline on lite dataset...$(NC)"
-	@if ! $(PIP) show duckdb > /dev/null 2>&1; then \
-		echo "$(YELLOW)DuckDB not installed. Installing...$(NC)"; \
-		$(MAKE) install-baseline; \
-	fi
-	cd baseline && $(PYTHON) main.py --data-dir ../$(DATA_DIR_LITE) --out-dir ../$(BASELINE_RESULTS_LITE)
-	@echo "$(GREEN)Baseline completed! Results saved to $(BASELINE_RESULTS_LITE)/$(NC)"
+baseline:
+	@echo "$(BLUE)Running DuckDB baseline...$(NC)"
+	@pip install -q duckdb pandas 2>/dev/null || true
+	@cd baseline && $(PYTHON) main.py --data-dir ../$(DATA_FULL) --out-dir ../$(BASELINE_RESULTS)
+	@echo "$(GREEN)Done! Results in $(BASELINE_RESULTS)/$(NC)"
 
 # Comparison
 compare: compare-full

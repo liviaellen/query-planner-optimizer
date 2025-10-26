@@ -6,18 +6,17 @@ Executes benchmark queries using optimized data structures
 
 Usage:
   python main.py --optimized-dir ./optimized_data --out-dir ./out
-  python main.py --optimized-dir ./optimized_data --out-dir ./out --queries-file queries.json
 """
 
 import argparse
 from pathlib import Path
 import csv
 import sys
-import json
 
-# Import baseline queries
-sys.path.insert(0, str(Path(__file__).parent / "baseline"))
-from inputs import queries as default_queries
+# Import queries
+# JUDGES: To use evaluation queries, comment out the line below and uncomment the judges line
+from inputs import queries as default_queries      # Default benchmark queries
+# from judges import queries as default_queries   # Judges' evaluation queries (uncomment to use)
 
 from query_engine import QueryEngine
 
@@ -87,74 +86,9 @@ def run_queries(queries, optimized_dir: Path, out_dir: Path):
     print("="*60)
 
 
-def load_queries_from_file(queries_file: Path) -> list:
-    """Load queries from a JSON file"""
-    try:
-        with open(queries_file, 'r') as f:
-            data = json.load(f)
-
-        # Support both formats:
-        # 1. Direct list of queries: [{"select": ..., "from": ...}, ...]
-        # 2. Object with queries key: {"queries": [{"select": ..., "from": ...}, ...]}
-        if isinstance(data, list):
-            queries = data
-        elif isinstance(data, dict) and "queries" in data:
-            queries = data["queries"]
-        else:
-            raise ValueError("JSON file must contain a list of queries or an object with 'queries' key")
-
-        print(f"📂 Loaded {len(queries)} queries from {queries_file}")
-        return queries
-
-    except FileNotFoundError:
-        print(f"❌ Error: Queries file not found: {queries_file}")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"❌ Error: Invalid JSON in queries file: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error loading queries file: {e}")
-        sys.exit(1)
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Execute queries using optimized query engine",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run default benchmark queries
-  python main.py --optimized-dir optimized_data_full --out-dir results_full
-
-  # Run custom queries from JSON file
-  python main.py --optimized-dir optimized_data_full --out-dir results_custom --queries-file my_queries.json
-
-JSON file format (two options):
-
-  Option 1 - Direct list:
-  [
-    {
-      "select": ["day", {"SUM": "bid_price"}],
-      "from": "events",
-      "where": [{"col": "type", "op": "eq", "val": "impression"}],
-      "group_by": ["day"]
-    },
-    ...
-  ]
-
-  Option 2 - Object with queries key:
-  {
-    "queries": [
-      {
-        "select": ["day", {"SUM": "bid_price"}],
-        "from": "events",
-        "where": [{"col": "type", "op": "eq", "val": "impression"}],
-        "group_by": ["day"]
-      },
-      ...
-    ]
-  }
-"""
+        description="Execute queries using optimized query engine"
     )
     parser.add_argument(
         "--optimized-dir",
@@ -168,11 +102,6 @@ JSON file format (two options):
         required=True,
         help="Output directory for query results"
     )
-    parser.add_argument(
-        "--queries-file",
-        type=Path,
-        help="JSON file containing queries to execute (optional, uses default benchmark queries if not provided)"
-    )
 
     args = parser.parse_args()
 
@@ -182,12 +111,9 @@ JSON file format (two options):
         print(f"Please run prepare.py first to create optimized data.")
         sys.exit(1)
 
-    # Load queries from file or use defaults
-    if args.queries_file:
-        queries = load_queries_from_file(args.queries_file)
-    else:
-        queries = default_queries
-        print(f"📋 Using default benchmark queries ({len(queries)} queries)")
+    # Use queries from import
+    queries = default_queries
+    print(f"📋 Using queries from import ({len(queries)} queries)")
 
     run_queries(queries, args.optimized_dir, args.out_dir)
 
