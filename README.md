@@ -32,11 +32,14 @@ The solution runs in two phases:
 Transform CSV data into optimized storage with partitions and pre-computed aggregations:
 
 ```bash
-# For full dataset (245M rows, ~19GB CSV)
-python prepare.py --data-dir data/data-full --optimized-dir optimized_data_full
+# For full dataset (245M rows, ~19GB CSV) - RECOMMENDED
+python prepare_optimized.py --data-dir data/data-full --optimized-dir optimized_data_full
 
 # For lite dataset (15M rows, ~1.1GB CSV) - faster for testing
-python prepare.py --data-dir data/data-lite --optimized-dir optimized_data_lite
+python prepare_optimized.py --data-dir data/data-lite --optimized-dir optimized_data_lite
+
+# Optional: Use legacy prepare.py (slower, single-threaded)
+python prepare.py --data-dir data/data-full --optimized-dir optimized_data_full
 ```
 
 **Preparation time:**
@@ -49,6 +52,8 @@ python prepare.py --data-dir data/data-lite --optimized-dir optimized_data_lite
 3. Pre-computes common aggregations (daily revenue, country stats, etc.)
 4. Generates statistics for query optimization
 
+**Note:** `prepare_optimized.py` uses parallel processing (6 workers) for faster preparation compared to the original `prepare.py`.
+
 #### Phase 2: Query Execution
 
 Run benchmark queries against the optimized data:
@@ -59,6 +64,9 @@ python main.py --optimized-dir optimized_data_full --out-dir results_full
 
 # Run queries on lite dataset
 python main.py --optimized-dir optimized_data_lite --out-dir results_lite
+
+# If you already have pre-processed data
+python main.py --optimized-dir optimized_data_full_new --out-dir out_optimized
 ```
 
 **Query performance (full dataset):**
@@ -133,7 +141,8 @@ python main.py --data-dir ../data/data-full --out-dir ../baseline_results_full
 
 ```
 .
-├── prepare.py           # Data preparation phase
+├── prepare_optimized.py # Data preparation (parallel, recommended)
+├── prepare.py           # Data preparation (legacy, single-threaded)
 ├── query_engine.py      # Query execution engine
 ├── main.py              # Benchmark runner
 ├── requirements.txt     # Python dependencies
@@ -143,7 +152,7 @@ python main.py --data-dir ../data/data-full --out-dir ../baseline_results_full
 ├── data/
 │   ├── data-full/      # Full dataset (245M rows)
 │   └── data-lite/      # Lite dataset (15M rows)
-└── optimized_data_full/ # Optimized storage (created by prepare.py)
+└── optimized_data_full/ # Optimized storage (created by prepare_optimized.py)
     ├── partitioned/     # Partitioned Parquet files
     ├── aggregates/      # Pre-computed aggregations
     └── stats.parquet    # Dataset statistics
